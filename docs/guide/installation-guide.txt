@@ -1,0 +1,42 @@
+1. Recommened Hardware
+   1 GHz 64-bit CPU
+   4 GB RAM
+   ...
+   Drives: SATA/SAS -- for storing data
+   Drives: SSD -- for accelerating metadata operation (optional)
+
+2. Recommened OS
+   Windows 8
+   CentOS 5.3 (and upward)
+   Ubuntu Server 11.04 (and upward)
+   FreeBSD 8 (and upward)
+
+3. Required software
+   Java XXX
+   pumkin (download from ...)
+
+4. Pre cooked software
+   4.1 VMWare images
+       dowanload from <url>
+   4.2 Complete installation CD (based on CentOS 6.2, and Java ...)
+
+5. Configuring pumkin
+   It can be done as soon as you install/setup pumkin on one server.
+
+5.1 basic setup
+5.2 network setup
+5.3 authentication setup
+5.4 security
+5.6 IPMI setup
+
+6. Installing addional nodes
+   Once you have finished settup up one node, you can instruct it to 
+   install on other nodes by following these methods ...
+
+7. adding nodes to pool
+   From the GUI:
+   login to server, and click Add 
+
+   Using the CLI:
+     pumkin node add <ip-addr> geo:asia dc:data-center-5 net:subnet1
+     pumkin node add <ip-addr> geo:americas dc:data-center-5 net:subnet1

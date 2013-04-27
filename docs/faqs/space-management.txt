@@ -1,0 +1,6 @@
+1. How to check free space ?
+   # pumkin stor report-usage <stor url>
+     free-space XXX GB    // amount free to be used, in case we want to retain MIN-REPLICATED-COPY
+     unused-space XXX GB  // amount not-used at all and is readily available
+
+1. How to check if/when I need to add more storage

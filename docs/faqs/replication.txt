@@ -1,0 +1,15 @@
+1. How many copy does server make for my stor ?
+   When yo create a "stor", following parameters are specified,
+     MIN-COPY: // default 2
+     MAX-COPY: // default 16
+   I will make keep at least MIN-COPY, and depending on available
+   free space, available network bandwidth and system load, server
+   may keep upto MAX-COPY.
+
+2. How do I check how many copy of this file exists and whereabouts ?
+   # pumkin stor locate-file <file path>
+   It will list you the files,
+     <server1 name>/<server1 geographical location> <health status: IN-SYNC|SYNCING|OUT_OF_SYNC>
+     <server2 name>/<server2 geographical location> <health status: IN-SYNC|SYNCING|OUT_OF_SYNC>
+     ...
+     <server1 name>/<server1 geographical location> <health status: IN-SYNC|SYNCING|OUT_OF_SYNC>

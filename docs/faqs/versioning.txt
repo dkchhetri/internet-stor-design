@@ -1,0 +1,11 @@
+1. What will happen if I delete a file locally, and then sync upstream to the stor ?
+   Server will still keep a copy of deleted file in the history. If you ever want
+   to retrieve this deleted file, you can do so by specifying stor-version/tag before
+   it was deleted.
+
+2. How do I tell server to get rid of deleted files (to free some space) ?
+   ...
+
+3. How do I tag my upstream sync ?
+
+4. How do I retrieve particular version of file/repo ?

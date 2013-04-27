@@ -1,0 +1,29 @@
+1. generate SSH key
+   # ssh-keygen -t rsa -f ~/my-storN-key
+   It will create,
+      ~/my-storN-key       <== make sure this is saved at secure location and is readable only to you
+      ~/my-storN-key.pub
+
+2. login to pumkin server (using your LDAP/NIS credentials)
+   It will ask you for following,
+      unique-stor-name: MAX len 255 char
+        Chose a unique name for your stor (you may use some convention, for e.g.
+        <department>-<user name>-<descriptive stor name, describes what you will
+        be storing here>)
+      ssh-key:
+        upload ~/my-storN-key.pub
+
+3. sync your local-directories up-stream (for first time)
+   # pumkin stor sync key:~/my-storN-key.pub from:<path of directories to sync> to:<stor url>
+
+   If you want to "tag" this version, then you can do so by using version suffix to files
+   you are synching as follow,
+     <path name>#<tag-name>
+
+4. Make some changes to your local files, and then sync again
+   # pumkin stor sync key:~/my-storN-key.pub from:<path of directories to sync> to:<stor url>
+
+5. unfortunatley, you lost some files and want to retrieve it back from stor
+   # pumkin stor sync key:~/my-storN-key.pub from:<stor url> to:<file/directories to retrieve>
+   To retrieve version as-of-date, then you can use the following syntax to specify version
+     <path>#<date in epoch seconds> / <path>#<tag-name>

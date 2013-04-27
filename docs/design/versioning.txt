@@ -1,0 +1,31 @@
+On sync-stor, new set of files/directories will be created with following
+convention,
+  <stor name>/<date: epoch second>/<user-directory-hierarchy>
+  
+  alternate: instead of cloning the directory hierarchy, we may chose to
+             store the files in "tar" like format. This "tar" like format
+             should be efficient for retrieving just one file from the
+             archive w/o reading the whole archive. Motivation here is
+             to reduce the number of "inodes" in the backend file-system.
+             In case this "tar" file hits file-size limit of the backend
+             FS, the "tar" file will be splitted at the LIMIT boundary.  
+
+checksum for the files will be stored as,
+  <stor name>/.metadata/data-checksum/whole-file.<date: epoch second>
+  FORMAT: line repeats for each copied file
+    user-directory-path <checksum>
+
+SHA512 of "whole-file" checksum will be stored as stor's current signature,
+  <stor name>/.metadata/stor-signature
+
+  ?? TODO: this scheme wouldn't work ??
+  client can compute the signature of the files at thier end and compare it
+  against this stor-signature to quickly determine if they need to retrieve
+  any file.
+
+In addition checksum by-blocks (block of 256KB) for the files will be as,
+  <stor name>/.metadata/data-checksum/by-blocks.<date: epoch second>
+  FORMAT: line repeats for each copied file
+    user-directory-path n-blocks <block0-cksum> <block1-cksum> ... <block-n-1-cksum>
+
+  Note: cksum is FIXED len cksum.

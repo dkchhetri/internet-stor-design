@@ -1,0 +1,7 @@
+1. Getting list of stor's
+
+2. Getting spcae utilization of a particular stor
+
+3. sync a file upsreteam
+
+4. retrieveing a file at version V
