@@ -35,14 +35,27 @@
       (str idxdir "/index/" prev-ts)
       nil)))
 
-(defn copy-one-file [src dst]
-  (clojure.java.io/copy (clojure.java.io/file src) (clojure.java.io/file dst)))
-
 (defn mkdir [dir]
   (let [d (java.io.File. dir)]
     (cond
-      (.isDirectory d) nil
-      :else)))
+      (.isDirectory d) true
+      :else (.mkdirs d))))
+
+;; get normalized path
+(defn normalized-path [path]
+  (.getCanonicalPath (java.io.File. path)))
+
+;; copy one file, making directory if needed
+(defn copy-one-file [src dst]
+  (let [parent (.getParent (java.io.File. dst))]
+    (mkdir parent)
+    (clojure.java.io/copy (clojure.java.io/file src) (clojure.java.io/file dst))))
 
 (defn copy-all-files [locdir bkdir ts]
-  (let [basedir (str 
+  (let [data_dir (normalized-path (str bkdir "/data/" ts))
+        idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
+       (.createNewFile (java.io.File. idx_db))
+       (with-open [idxwr (clojure.java.io/writer idx_db)]
+         (map #(do (copy-one-file % (str data_dir "/" %)) (.write idxwr (str % " " (md5file %))))
+           (map #(.getCanonicalPath %)
+             (walk-dir locdir))))))
