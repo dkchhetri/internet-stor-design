@@ -56,6 +56,6 @@
         idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
        (.createNewFile (java.io.File. idx_db))
        (with-open [idxwr (clojure.java.io/writer idx_db)]
-         (map #(do (copy-one-file % (str data_dir "/" %)) (.write idxwr (str % " " (md5file %))))
-           (map #(.getCanonicalPath %)
-             (walk-dir locdir))))))
+         (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
+           (copy-one-file ff (str data_dir "/" ff))
+           (.write idxwr (str ff " " (md5file ff) "\n"))))))
