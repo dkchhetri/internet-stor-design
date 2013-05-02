@@ -12,4 +12,4 @@
 
 6. Extensible using HTTP based Data and Management API.
 
-7. Massively scalable architecture.
+7. Massively scalable decentralized architecture.
