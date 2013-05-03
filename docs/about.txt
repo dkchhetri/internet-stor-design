@@ -1,0 +1,19 @@
+7 things about internet-stor.
+
+1. Simple to deploy, use and manage.
+
+2. Data Protection and availability through replication.
+
+3. Data Integrity through checksum and self-healing.
+
+4. Designed to run on heterogenious and commodity hardware.
+
+5. Checkpointing through versioning.
+
+6. Extensible using HTTP based Data and Management API.
+
+7. Massively scalable in space and performance through decentralized architecture.
+
+--- maybe following take priority
+ - QoS, sharing and billing
+ - Security, Encryption and Immutability (for Legal requirements)
