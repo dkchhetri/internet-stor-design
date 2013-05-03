@@ -44,6 +44,14 @@
       (.isDirectory d) true
       :else (.mkdirs d))))
 
+(defn setup-bkdir [dir]
+  (let [d (java.io.File. dir)]
+    (if-not (.isDirectory d)
+      (do 
+        (mkdir dir)
+        (mkdir (str dir "/.metadata/index")))
+      true)))
+
 ;; get normalized path
 (defn normalized-path [path]
   (.getCanonicalPath (java.io.File. path)))
@@ -58,10 +66,10 @@
   (.write idx (str file "|" md5 "\n")))
 
 ;; copy one file, making directory if needed
-(defn copy-one-file [src dst]
+(defn copy-one-file [verbose src dst]
   (let [parent (.getParent (java.io.File. dst))]
     (mkdir parent)
-    (println (str "Copy: " src " -> " dst))
+    (if verbose (println (str "Copy: " src " -> " dst)))
     (clojure.java.io/copy (clojure.java.io/file src) (clojure.java.io/file dst))))
 
 (defn copy-all-files [locdir bkdir ts]
@@ -70,7 +78,7 @@
        (.createNewFile (java.io.File. idx_db))
        (with-open [idxwr (open-idx-writer idx_db)]
          (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
-           (copy-one-file ff (str data_dir "/" ff))
+           (copy-one-file false ff (str data_dir "/" ff))
            (idx-tbl-add idxwr ff (md5file ff))))))
 
 (defn parse-idx-tbl [file]
@@ -93,10 +101,11 @@
                  locmd5 (md5file ff)]
              (idx-tbl-add new-idx ff locmd5)
              (if (not= locmd5 bkmd5)
-               (copy-one-file ff (str data_dir "/" ff))))))))
+               (copy-one-file true ff (str data_dir "/" ff))))))))
 
 
 (defn backup-files [locdir bkdir]
+  (setup-bkdir bkdir)
   (let [cur-ts (now-seconds)
         idx-db (prev-index-db (str bkdir "/.metadata") cur-ts)]
     (if idx-db
