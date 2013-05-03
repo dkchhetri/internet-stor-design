@@ -1,4 +1,6 @@
-7 things about internet-stor.
+7 dimensions of internet-stor.
+
+Guiding principle on which internet-stor is built.
 
 1. Simple to deploy, use and manage.
 
@@ -6,9 +8,9 @@
 
 3. Data Integrity through checksum and self-healing.
 
-4. Designed to run on heterogenious and commodity hardware.
+4. Checkpointing through versioning.
 
-5. Checkpointing through versioning.
+5. Designed to run on heterogenious and commodity hardware.
 
 6. Extensible using HTTP based Data and Management API.
 
