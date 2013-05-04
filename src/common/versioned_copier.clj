@@ -1,12 +1,26 @@
-(defn md5file [file]
-  (let [input (java.io.FileInputStream. file)
-        digest (java.security.MessageDigest/getInstance "MD5")
-        stream (java.security.DigestInputStream. input digest)
-        bufsize (* 128 1024)
-        buf (byte-array bufsize)]
+;; size of chunk with which file will be chopped and checksummed
+(def csum-chunk-size 8192)
 
-  (while (not= -1 (.read stream buf 0 bufsize)))
-  (apply str (map (partial format "%02x") (.digest digest)))))
+;; finalise the digest by padding and return string representation
+(defn digestDone [digest buf len]
+  (apply str (map (partial format "%02x") (.digest digest))))
+
+(defn md5file [file]
+  (with-open [input (java.io.FileInputStream. file)]
+    (let [d1 (java.security.MessageDigest/getInstance "MD5")
+          d2 (java.security.MessageDigest/getInstance "MD5")
+          bufsize csum-chunk-size
+          buf (byte-array bufsize)
+         ]
+      (loop [off 0 last_cnt 0 ent ()]
+        (let [cnt (.read input buf 0 bufsize)]
+          (if (= -1 cnt)
+            (cons [0 off (digestDone d1 buf last_cnt)] ent)
+            (do
+              (.reset d2)
+              (.update d1 buf 0 cnt)
+              (.update d2 buf 0 cnt)
+              (recur (+ off cnt) cnt (cons [off (+ off cnt) (digestDone d2 buf cnt)] ent)))))))))
 
 (defn now-seconds []
   (int (/ (System/currentTimeMillis) 1000)))
