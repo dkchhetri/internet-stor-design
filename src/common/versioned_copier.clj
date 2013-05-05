@@ -11,9 +11,15 @@
 (defn now-seconds []
   (int (/ (System/currentTimeMillis) 1000)))
 
+;; return seq of File
 (defn walk-dir [dir]
   (remove #(.isDirectory %)
     (file-seq (java.io.File. dir))))
+;; return seq of String:file-name
+(defn walk-dir2 [dir]
+  (map 
+    #(.getCanonicalPath %)
+    (filter #(.isFile %) (file-seq (java.io.File. dir)))))
 
 ;; list of index-db's
 (defn index-db-list [idxdir]
