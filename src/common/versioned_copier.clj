@@ -15,13 +15,28 @@
 (def rolling-hash-base 257)
 (def rolling-hash-mod 2147483648)
 (defn rolling-hash [s len]
-  ;; It is pretty slow to do such computation in clojure, therefore return 0
+  ;; It is pretty slow to do such computation in clojure, therefore setting
+  ;; 'off' to 'len' instead of 0, it will always return 0 for now
   (loop [h 0 off len]
     (if (< off len)
       (recur (mod (+ (* rolling-hash-base (aget s off)) h) rolling-hash-mod) (inc off))
       h)))
 
 (defn md5file [file]
+  (with-open [input (java.io.FileInputStream. file)]
+    (let [d1 (java.security.MessageDigest/getInstance "MD5")
+          bufsize 262144
+          buf (byte-array bufsize)
+         ]
+      (loop [last_cnt 0]
+        (let [cnt (.read input buf 0 bufsize)]
+          (if (= -1 cnt)
+            (digestDone d1 buf last_cnt)
+            (do
+              (.update d1 buf 0 cnt)
+              (recur cnt))))))))
+
+(defn md5set [file]
   (with-open [input (java.io.FileInputStream. file)]
     (let [d1 (java.security.MessageDigest/getInstance "MD5")
           d2 (java.security.MessageDigest/getInstance "MD5")
@@ -110,7 +125,7 @@
       (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
         (let [dst (str data_dir "/" ff)]
           (copy-one-file false ff dst)
-          (idx-tbl-add idxwr ff dst (md5file ff)))))))
+          (idx-tbl-add idxwr ff dst (md5set ff)))))))
 
 (defn parse-idx-tbl [file]
   (with-open [r (clojure.java.io/reader file)]
@@ -119,21 +134,22 @@
       (let [s (first l)]
         (if-not s
           h
-          (recur (rest l) (assoc h (first (.split #"\|" s)) (second (.split #"\|" s)))))))))
+          (let [v (.split #"\|" s)]
+            (recur (rest l) (assoc h (aget v 0) (aget v 2)))))))))
 
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
         idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))
         itbl (parse-idx-tbl old-idx-db)]
-       (.createNewFile (java.io.File. idx_db))
-       (with-open [new-idx (open-idx-writer idx_db)]
-         (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
-           (let [bkmd5 (get itbl ff)
-                 locmd5 (md5file ff)]
-             (idx-tbl-add new-idx ff locmd5)
-             (if (not= locmd5 bkmd5)
-               (copy-one-file true ff (str data_dir "/" ff))))))))
-
+    (.createNewFile (java.io.File. idx_db))
+    (with-open [new-idx (open-idx-writer idx_db)]
+      (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
+        (let [bkmd5 (get itbl ff)
+              locmd5 (md5file ff)
+              dst (str data_dir "/" ff)]
+          (idx-tbl-add new-idx ff dst locmd5)
+          (if (not= locmd5 bkmd5)
+            (copy-one-file true ff dst)))))))
 
 (defn backup-files [locdir bkdir]
   (setup-bkdir bkdir)
