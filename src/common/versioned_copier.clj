@@ -171,9 +171,10 @@
     (with-open [new-idx (open-idx-writer idx_db)]
       (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
         (let [bkmd5 (:md5 (first (get itbl ff {:md5 "not-found"})))
-              locmd5 (md5file ff)
+              locmd5set (md5set ff)
+              locmd5 (:md5 (first locmd5set))
               dst (str data_dir "/" ff)]
-          (idx-tbl-add new-idx ff dst locmd5)
+          (idx-tbl-add new-idx ff dst locmd5set)
           (if (not= locmd5 bkmd5)
             (copy-one-file true ff dst)))))))
 
