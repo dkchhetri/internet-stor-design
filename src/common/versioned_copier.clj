@@ -1,9 +1,25 @@
 ;; size of chunk with which file will be chopped and checksummed
-(def csum-chunk-size 8192)
+(def csum-chunk-size 1024)
 
-;; finalise the digest by padding and return string representation
+;; finalize the digest by padding and return string representation
 (defn digestDone [digest buf len]
   (apply str (map (partial format "%02x") (.digest digest))))
+
+;; organize md5 o/p such that it is ordered as,
+;;   [0 file-len md5] [0 chunk1 md5] [chunk1 chunk2 md5] ...
+(defn md5-organized-fmt [inp]
+  (cons (first inp) (reverse (rest inp))))
+
+;; Parameter used to compute rolling-hash
+;; We can chose power-of-two numbers as well for faster compute
+(def rolling-hash-base 257)
+(def rolling-hash-mod 2147483648)
+(defn rolling-hash [s len]
+  ;; It is pretty slow to do such computation in clojure, therefore return 0
+  (loop [h 0 off len]
+    (if (< off len)
+      (recur (mod (+ (* rolling-hash-base (aget s off)) h) rolling-hash-mod) (inc off))
+      h)))
 
 (defn md5file [file]
   (with-open [input (java.io.FileInputStream. file)]
@@ -15,12 +31,12 @@
       (loop [off 0 last_cnt 0 ent ()]
         (let [cnt (.read input buf 0 bufsize)]
           (if (= -1 cnt)
-            (cons [0 off (digestDone d1 buf last_cnt)] ent)
+            (md5-organized-fmt (cons [0 off (digestDone d1 buf last_cnt) (rolling-hash buf cnt)] ent))
             (do
               (.reset d2)
               (.update d1 buf 0 cnt)
               (.update d2 buf 0 cnt)
-              (recur (+ off cnt) cnt (cons [off (+ off cnt) (digestDone d2 buf cnt)] ent)))))))))
+              (recur (+ off cnt) cnt (cons [off cnt (digestDone d2 buf cnt) (rolling-hash buf cnt)] ent)))))))))
 
 (defn now-seconds []
   (int (/ (System/currentTimeMillis) 1000)))
@@ -76,8 +92,8 @@
 (defn close-idx [idx]
   (.close idx))
 
-(defn idx-tbl-add [idx file md5]
-  (.write idx (str file "|" md5 "\n")))
+(defn idx-tbl-add [idx file dst md5]
+  (.write idx (str file "|" dst "|" md5 "\n")))
 
 ;; copy one file, making directory if needed
 (defn copy-one-file [verbose src dst]
@@ -88,12 +104,13 @@
 
 (defn copy-all-files [locdir bkdir ts]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
-        idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
-       (.createNewFile (java.io.File. idx_db))
-       (with-open [idxwr (open-idx-writer idx_db)]
-         (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
-           (copy-one-file false ff (str data_dir "/" ff))
-           (idx-tbl-add idxwr ff (md5file ff))))))
+    idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
+    (.createNewFile (java.io.File. idx_db))
+    (with-open [idxwr (open-idx-writer idx_db)]
+      (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
+        (let [dst (str data_dir "/" ff)]
+          (copy-one-file false ff dst)
+          (idx-tbl-add idxwr ff dst (md5file ff)))))))
 
 (defn parse-idx-tbl [file]
   (with-open [r (clojure.java.io/reader file)]
