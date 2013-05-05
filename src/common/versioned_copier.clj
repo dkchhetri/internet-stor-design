@@ -1,3 +1,21 @@
+;; write data-structure 'ds' to filename, which can be later read-back
+;; using deserialize
+(defn f-serialize [ds #^String filename]
+  (with-open [wr (clojure.java.io/writer filename)]
+    (binding [*print-dup* true *out* wr]
+      (prn ds))))
+ 
+ 
+;; This allows us to then read in the structure at a later time
+(defn f-deserialize [filename]
+  (with-open [r (java.io.PushbackReader. (java.io.FileReader. filename))]
+    (read r)))
+
+;; String based deserializer
+(defn s-deserialize [#^String s]
+  (let [r (java.io.PushbackReader. (java.io.StringReader. s))]
+    (read r)))
+
 ;; size of chunk with which file will be chopped and checksummed
 (def csum-chunk-size 1024)
 
@@ -36,6 +54,9 @@
               (.update d1 buf 0 cnt)
               (recur cnt))))))))
 
+(defn md5entry [off cnt md5 rhash]
+  {:off off :count cnt :md5 md5 :rhash rhash})
+
 (defn md5set [file]
   (with-open [input (java.io.FileInputStream. file)]
     (let [d1 (java.security.MessageDigest/getInstance "MD5")
@@ -46,12 +67,16 @@
       (loop [off 0 last_cnt 0 ent ()]
         (let [cnt (.read input buf 0 bufsize)]
           (if (= -1 cnt)
-            (md5-organized-fmt (cons [0 off (digestDone d1 buf last_cnt) (rolling-hash buf cnt)] ent))
+            (let [md5 (digestDone d1 buf last_cnt)
+                  rhash (rolling-hash buf cnt)]
+              (md5-organized-fmt (cons (md5entry 0 off md5 rhash) ent)))
             (do
               (.reset d2)
               (.update d1 buf 0 cnt)
               (.update d2 buf 0 cnt)
-              (recur (+ off cnt) cnt (cons [off cnt (digestDone d2 buf cnt) (rolling-hash buf cnt)] ent)))))))))
+              (let [md5 (digestDone d2 buf cnt)
+                    rhash (rolling-hash buf cnt)]
+                (recur (+ off cnt) cnt (cons (md5entry off cnt md5 rhash) ent))))))))))
 
 (defn now-seconds []
   (int (/ (System/currentTimeMillis) 1000)))
@@ -134,8 +159,9 @@
       (let [s (first l)]
         (if-not s
           h
-          (let [v (.split #"\|" s)]
-            (recur (rest l) (assoc h (aget v 0) (aget v 2)))))))))
+          (let [v (.split #"\|" s)
+                x (s-deserialize (aget v 2))]
+            (recur (rest l) (assoc h (aget v 0) x))))))))
 
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
@@ -144,7 +170,7 @@
     (.createNewFile (java.io.File. idx_db))
     (with-open [new-idx (open-idx-writer idx_db)]
       (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
-        (let [bkmd5 (get itbl ff)
+        (let [bkmd5 (:md5 (first (get itbl ff {:md5 "not-found"})))
               locmd5 (md5file ff)
               dst (str data_dir "/" ff)]
           (idx-tbl-add new-idx ff dst locmd5)
