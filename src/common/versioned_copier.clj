@@ -17,6 +17,7 @@
     (read r)))
 
 ;; size of chunk with which file will be chopped and checksummed
+;;(def csum-chunk-size 65536)
 (def csum-chunk-size 1024)
 
 ;; finalize the digest by padding and return string representation
@@ -145,7 +146,7 @@
 (defn copy-one-file [verbose src dst]
   (let [parent (.getParent (java.io.File. dst))]
     (mkdir parent)
-    (if verbose (println (str "Copy: " src " -> " dst)))
+    (if verbose (println (str "Copy: " src)))
     (clojure.java.io/copy (clojure.java.io/file src) (clojure.java.io/file dst))))
 
 (defn copy-all-files [locdir bkdir ts]
@@ -168,6 +169,36 @@
           (let [v (.split #"\|" s)
                 x (s-deserialize (aget v 2))]
             (recur (rest l) (assoc h (aget v 0) x))))))))
+;; =================== File Delta Generation ============================
+;; convert list of md5 to hash-map
+;;  md5 => [off count]
+(defn md5set-tbl [md5set]
+  ;; first entry is md5 for full file, ignore it
+  (loop [hm (hash-map) ms (rest md5set)]
+    (let [he (first ms)]
+      (if-not he
+        hm
+        (if (get hm (:md5 he))
+          (recur hm (rest ms))
+          (recur (assoc hm (:md5 he) (vector (:off he) (:count he))) (rest ms)))))))
+
+;; Generate delta to be transferred from src to dst to make 'dst' identical
+;; to 'src'
+;; Delta is list of entries with following format
+;;  [<bool:match> <src file offset> <dst file offset> <byte count>} 
+(defn gen-file-delta [src-md5set dst-md5set]
+  (let [dmap (md5set-tbl dst-md5set)]
+    ;; first entry is md5 for full file, ignore it
+    (loop [delta-list () s-list (rest src-md5set)]
+      (let [se (first s-list)
+            de (if se (get dmap (:md5 se)) nil)]
+        (if-not se
+          delta-list 
+          (if (and de (= (:count se) (get de 1)))
+            (recur (cons (vector true (:off se) (get de 0) (:count se)) delta-list) (rest s-list))
+            (recur (cons (vector false (:off se) 0 (:count se)) delta-list) (rest s-list))))))))
+;; =================== File Delta Generation ============================
+  
 
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
