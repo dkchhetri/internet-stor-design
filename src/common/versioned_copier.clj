@@ -17,8 +17,8 @@
     (read r)))
 
 ;; size of chunk with which file will be chopped and checksummed
-;;(def csum-chunk-size 65536)
-(def csum-chunk-size 1024)
+(def csum-chunk-size 65536)
+;;(def csum-chunk-size 1024)
 
 ;; finalize the digest by padding and return string representation
 (defn digestDone [digest buf len]
@@ -139,8 +139,8 @@
 (defn close-idx [idx]
   (.close idx))
 
-(defn idx-tbl-add [idx file dst md5]
-  (.write idx (str file "|" dst "|" md5 "\n")))
+(defn idx-tbl-add [idx file dst info md5]
+  (.write idx (str file "|" dst "|" info "|" md5 "\n")))
 
 ;; copy one file, making directory if needed
 (defn copy-one-file [verbose src dst]
@@ -157,8 +157,11 @@
       (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
         (let [dst (str data_dir "/" ff)]
           (copy-one-file false ff dst)
-          (idx-tbl-add idxwr ff dst (md5set ff)))))))
+          (idx-tbl-add idxwr ff dst (get-posix-finfo ff) (md5set ff)))))))
 
+;; parse file into hash-map entries of the form,
+;;  key: source file name
+;;  value: (list of {:off <offset> :count <blk size> :md5 <block md5> :rhash <rolling hash>})
 (defn parse-idx-tbl [file]
   (with-open [r (clojure.java.io/reader file)]
     (loop [l (line-seq r)
@@ -167,8 +170,9 @@
         (if-not s
           h
           (let [v (.split #"\|" s)
-                x (s-deserialize (aget v 2))]
+                x (s-deserialize (aget v 3))]
             (recur (rest l) (assoc h (aget v 0) x))))))))
+
 ;; =================== File Delta Generation ============================
 ;; convert list of md5 to hash-map
 ;;  md5 => [off count]
@@ -198,6 +202,56 @@
             (recur (cons (vector true (:off se) (get de 0) (:count se)) delta-list) (rest s-list))
             (recur (cons (vector false (:off se) 0 (:count se)) delta-list) (rest s-list))))))))
 ;; =================== File Delta Generation ============================
+
+;; =================== File Attributes ==================================
+(def no-follow-links
+  (into-array [java.nio.file.LinkOption/NOFOLLOW_LINKS]))
+
+(def java-posix-fattr
+  java.nio.file.attribute.PosixFileAttributes)
+
+(defn posix-fattr-permissions [posix-fattr]
+  (.toString (.permissions posix-fattr)))
+
+(defn posix-fattr-owner [posix-fattr]
+  (.toString (.owner posix-fattr)))
+
+(defn posix-fattr-group [posix-fattr]
+  (.toString (.group posix-fattr)))
+
+(defn posix-fattr-mtime [posix-fattr]
+  (.toMillis (.lastModifiedTime posix-fattr)))
+
+(defn posix-fattr-ctime [posix-fattr]
+  (.toMillis (.creationTime posix-fattr)))
+
+(defn posix-fattr-atime [posix-fattr]
+  (.toMillis (.lastAccessTime posix-fattr)))
+
+(defn posix-fattr-size [posix-fattr]
+  (.size posix-fattr))
+
+(defn posix-fattr-type [posix-fattr]
+  (cond (.isRegularFile posix-fattr) "f"
+        (.isDirectory posix-fattr) "d"
+        (.isSymbolicLink posix-fattr) "l"
+        :else "o"))
+
+(defn get-posix-fattr [file-name]
+  (java.nio.file.Files/readAttributes (.toPath (java.io.File. file-name)) java-posix-fattr no-follow-links))
+
+(defn get-posix-finfo [file-name]
+  (let [a (get-posix-fattr file-name)]
+    {:type (posix-fattr-type a)
+     :size (posix-fattr-size a)
+     :owner (posix-fattr-owner a)
+     :group (posix-fattr-group a)
+     :perm (posix-fattr-permissions a)
+     :atime (posix-fattr-atime a) 
+     :ctime (posix-fattr-ctime a) 
+     :mtime (posix-fattr-mtime a)}))
+
+;; =================== File Attributes ==================================
   
 
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
@@ -211,7 +265,7 @@
               locmd5set (md5set ff)
               locmd5 (:md5 (first locmd5set))
               dst (str data_dir "/" ff)]
-          (idx-tbl-add new-idx ff dst locmd5set)
+          (idx-tbl-add new-idx ff dst (get-posix-finfo ff) locmd5set)
           (if (not= locmd5 bkmd5)
             (copy-one-file true ff dst)))))))
 
