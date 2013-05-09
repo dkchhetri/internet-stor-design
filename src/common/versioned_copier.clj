@@ -149,16 +149,6 @@
     (if verbose (println (str "Copy: " src)))
     (clojure.java.io/copy (clojure.java.io/file src) (clojure.java.io/file dst))))
 
-(defn copy-all-files [locdir bkdir ts]
-  (let [data_dir (normalized-path (str bkdir "/data/" ts))
-    idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
-    (.createNewFile (java.io.File. idx_db))
-    (with-open [idxwr (open-idx-writer idx_db)]
-      (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
-        (let [dst (str data_dir "/" ff)]
-          (copy-one-file false ff dst)
-          (idx-tbl-add idxwr ff dst (get-posix-finfo ff) (md5set ff)))))))
-
 ;; parse file into hash-map entries of the form,
 ;;  key: source file name
 ;;  value: (list of {:off <offset> :count <blk size> :md5 <block md5> :rhash <rolling hash>})
@@ -253,6 +243,15 @@
 
 ;; =================== File Attributes ==================================
   
+(defn copy-all-files [locdir bkdir ts]
+  (let [data_dir (normalized-path (str bkdir "/data/" ts))
+    idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
+    (.createNewFile (java.io.File. idx_db))
+    (with-open [idxwr (open-idx-writer idx_db)]
+      (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
+        (let [dst (str data_dir "/" ff)]
+          (copy-one-file false ff dst)
+          (idx-tbl-add idxwr ff dst (get-posix-finfo ff) (md5set ff)))))))
 
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
