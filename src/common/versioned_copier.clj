@@ -17,7 +17,7 @@
     (read r)))
 
 ;; size of chunk with which file will be chopped and checksummed
-(def csum-chunk-size 65536)
+(def csum-chunk-size 32768)
 ;;(def csum-chunk-size 1024)
 
 ;; finalize the digest by padding and return string representation
@@ -201,7 +201,7 @@
   java.nio.file.attribute.PosixFileAttributes)
 
 (defn posix-fattr-permissions [posix-fattr]
-  (.toString (.permissions posix-fattr)))
+  (java.nio.file.attribute.PosixFilePermissions/toString (.permissions posix-fattr)))
 
 (defn posix-fattr-owner [posix-fattr]
   (.toString (.owner posix-fattr)))
@@ -221,10 +221,10 @@
 (defn posix-fattr-size [posix-fattr]
   (.size posix-fattr))
 
-(defn posix-fattr-type [posix-fattr]
+(defn posix-fattr-type [path posix-fattr]
   (cond (.isRegularFile posix-fattr) "f"
         (.isDirectory posix-fattr) "d"
-        (.isSymbolicLink posix-fattr) "l"
+        (.isSymbolicLink posix-fattr) (str "l:" (.toString (java.nio.file.Files/readSymbolicLink path)))
         :else "o"))
 
 (defn get-posix-fattr [file-name]
@@ -232,7 +232,7 @@
 
 (defn get-posix-finfo [file-name]
   (let [a (get-posix-fattr file-name)]
-    {:type (posix-fattr-type a)
+    {:type (posix-fattr-type (.toPath (java.io.File. file-name)) a)
      :size (posix-fattr-size a)
      :owner (posix-fattr-owner a)
      :group (posix-fattr-group a)
@@ -240,6 +240,20 @@
      :atime (posix-fattr-atime a) 
      :ctime (posix-fattr-ctime a) 
      :mtime (posix-fattr-mtime a)}))
+
+(defn to-posix-fattr-permissions [s]
+  (java.nio.file.attribute.PosixFilePermissions/fromString s))
+
+(defn set-posix-fattr-permissions [path #^String perm]
+  (java.nio.file.Files/setPosixFilePermissions path (to-posix-fattr-permissions perm)))
+
+(defn set-posix-fattr-mtime [path #^Long milli-sec]
+  (java.nio.file.Files/setLastModifiedTime path (java.nio.file.attribute.FileTime/fromMillis milli-sec)))
+
+(defn set-posix-fattr [file-name attr]
+  (let [path (.toPath (java.io.File. file-name))]
+    (set-posix-fattr-permissions path (:perm attr))
+    (set-posix-fattr-mtime path (:mtime attr))))
 
 ;; =================== File Attributes ==================================
   
@@ -251,6 +265,7 @@
       (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
         (let [dst (str data_dir "/" ff)]
           (copy-one-file false ff dst)
+          (set-posix-fattr-permissions (.toPath (java.io.File. dst)) "r--------")
           (idx-tbl-add idxwr ff dst (get-posix-finfo ff) (md5set ff)))))))
 
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
@@ -266,7 +281,9 @@
               dst (str data_dir "/" ff)]
           (idx-tbl-add new-idx ff dst (get-posix-finfo ff) locmd5set)
           (if (not= locmd5 bkmd5)
-            (copy-one-file true ff dst)))))))
+            (do
+              (copy-one-file true ff dst)
+              (set-posix-fattr-permissions (.toPath (java.io.File. dst)) "r--------"))))))))
 
 (defn backup-files [locdir bkdir]
   (setup-bkdir bkdir)
@@ -275,3 +292,19 @@
     (if idx-db
       (copy-modified-files locdir bkdir cur-ts idx-db)
       (copy-all-files locdir bkdir cur-ts))))
+
+(defn restore-files
+  ([locdir bkdir] (restore-files locdir bkdir (now-seconds)))
+
+  ([locdir bkdir ts]
+    (let [idx-db (prev-index-db (str bkdir "/.metadata") ts)]
+      (if-not idx-db
+        (println (str "No backup found prior to time-stamp " ts))
+        (with-open [r (clojure.java.io/reader idx-db)]
+          (doseq [l (line-seq r)]
+            (let [v (.split #"\|" l)
+                  to (str locdir "/" (aget v 0))
+                  from (aget v 1)
+                  attr (s-deserialize (aget v 2))]
+              (copy-one-file true from to)
+              (set-posix-fattr to attr))))))))
