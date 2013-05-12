@@ -154,7 +154,11 @@
 
 ;; parse file into hash-map entries of the form,
 ;;  key: source file name
-;;  value: (list of {:off <offset> :count <blk size> :md5 <block md5> :rhash <rolling hash>})
+;;  value: (vector dst attr list-of<md5set>)
+;;        where,
+;;        dst: destination path on backup
+;;        attr: {... posix attribute}
+;;        md5set: {:off <offset> :count <blk size> :md5 <block md5> :rhash <rolling hash>})
 (defn parse-idx-tbl [file]
   (with-open [r (clojure.java.io/reader file)]
     (loop [l (line-seq r)
@@ -259,10 +263,14 @@
     (set-posix-fattr-mtime path (:mtime attr))))
 
 ;; =================== File Attributes ==================================
+
+;; Get max "last-modified-time" from index-file
+(defn idx-max-mtime [idx]
+  (apply max (map #(:mtime (s-deserialize (aget (.split #"\|" %1) 2))) (line-seq (clojure.java.io/reader idx)))))
   
 (defn copy-all-files [locdir bkdir ts]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
-    idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
+        idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))]
     (.createNewFile (java.io.File. idx_db))
     (with-open [idxwr (open-idx-writer idx_db)]
       (doseq [ff (map #(.getCanonicalPath %) (walk-dir locdir))]
@@ -271,6 +279,8 @@
           (set-posix-fattr-permissions (.toPath (java.io.File. dst)) "r--------")
           (idx-tbl-add idxwr ff dst (get-posix-finfo ff) (md5set ff)))))))
 
+;; Further optimization possibilities,
+;; - compare last-modified-time, and if they are same, no need to compare md5
 (defn copy-modified-files [locdir bkdir ts old-idx-db]
   (let [data_dir (normalized-path (str bkdir "/data/" ts))
         idx_db (normalized-path (str bkdir "/.metadata/index/file_index." ts))
@@ -282,6 +292,7 @@
               locmd5set (md5set ff)
               locmd5 (:md5 (first locmd5set))
               dst (str data_dir "/" ff)]
+          ;; XXX: when file are same the "dst" hs to be copied over from the previous idx table
           (idx-tbl-add new-idx ff dst (get-posix-finfo ff) locmd5set)
           (if (not= locmd5 bkmd5)
             (do

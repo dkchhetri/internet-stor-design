@@ -1,0 +1,54 @@
+1. Client syncing to the stor
+   > Open Transaction
+     GET /pumkin/v1/<stor name>/transaction HTTP/1.1
+
+   < Response to transaction
+     HTTP/1.1 200 OK
+     X-TransactionId: 0x12373223skjdfsdfhksdf
+     content-length: 0
+
+   > Get list of files and thier md5/attribute
+     GET /pumkin/v1/<stor name>/index/0x12373223skjdfsdfhksdf
+
+   < Response Get list of files and thier md5/attribute
+     HTTP/1.1 200 OK
+     X-File-Count: <M>
+     content-length: <N>
+     <file 1>|<attributes>|<whole file md5sum>
+     <file 2>|<attributes>|<whole file md5sum>
+     ...
+     <file M>|<attributes>|<whole file md5sum>
+
+   > Client travese it's local directory and compute delta
+     foreach file in local-directory
+       if (file not in server)
+           add file to new-file-list
+       elif (mtime is same)
+           next
+       elif (md5sum(file) == server-file-md5)
+           next
+       elif
+           add file to modified-file-list
+
+     foreach file in new-file-list
+         send-new-file(file)
+
+     foreach file in modified-file-list
+         get-md5-for-each-chunk(file)
+
+
+     foreach file in modified-file-list
+         foreach chunk in file
+             if (chunk-md5sum(file, chunk) != server-chunk-md5sum)
+                 add {file, chunk} to modified-chunk-list
+
+     foreach chunk in modified-chunk-list
+         send-file-chunk(file, chunk)
+
+
+   > Client close transaction
+     POST /pumkin/v1/<stor name>/0x12373223skjdfsdfhksdf
+
+   < Response to close transaction
+     HTTP/1.1 201 Created
+     Location: /pumkin/v1/<stor name>/<time-stamp>

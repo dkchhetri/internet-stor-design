@@ -1,0 +1,69 @@
+1. links
+   http://jcalcote.wordpress.com/2008/10/16/put-or-post-the-rest-of-the-story/
+   http://martinfowler.com/articles/richardsonMaturityModel.html
+   http://roy.gbiv.com/untangled/2008/rest-apis-must-be-hypertext-driven
+
+B.1 Blog
+
+Create = PUT with a new URI
+         POST to a base URI returning a newly created URI
+Read   = GET
+Update = PUT with an existing URI
+Delete = DELETE
+
+The distinction you make between PUT to create resources whose names (URIs)
+are assigned by the client and POST to create resources whose names are
+assigned by the server is important. See Richardson and Ruby's Restful
+Web Services (O'Reilly) for a discussion on it
+
+B.1 http://jcalcote.wordpress.com/2008/10/16/put-or-post-the-rest-of-the-story/
+While Retrieve really does map to an HTTP GET request, and likewise Delete
+really does map to an HTTP DELETE operation, the same cannot be said of Create
+and PUT or Update and POST. In some cases, Create means PUT, but in other cases
+it means POST. Likewise, in some cases Update means POST, while in others it
+means PUT.
+
+The crux of the issue comes down to a concept known as [idempotency].
+According to the HTTP 1.1 specification, GET, HEAD, PUT and DELETE are
+idempotent, while POST is not.
+
+According to the HTTP 1.1 specification, the server’s response to POST should
+be something like “201 Created” with Location headers for each response
+containing the resource (URL) references to the newly created resources –
+something like “/GrafPak/Pictures/1001.jpg” and “/GrafPak/Pictures/1002.jpg”.
+
+You use POST when you are modifying a resource incrementally, or creating a new
+unnamed resource, expecting the server to return a URI for the newly created
+resource. The real trick to understanding web idempotency is knowing that
+caching proxies handle PUT and POST requests differently. PUT requests are cached,
+and can be reapplied multiple times by these proxies without regard to the
+content, because they know it doesn’t hurt to re-PUT, if needed. They simply don’t
+cache POST requests because they know they can’t reapply a POST without causing
+problems. The same concept applies to data coming from servers to clients. Caching
+proxies will not (necessarily) re-query the server for PUT results, but can return
+cached copies because of the nature of PUT. These concepts are at the heart of web
+architecture scalability features.
+
+After that discussion, a more realistic mapping would seem to be:
+
+    Create = PUT iff you are sending the full content of the specified
+             resource (URL).
+    Create = POST if you are sending a command to the server to create a
+             subordinate of the specified resource, using some server-side
+             algorithm.
+    Retrieve = GET.
+    Update = PUT iff you are updating the full content of the specified
+             resource.
+    Update = POST if you are requesting the server to update one or more
+             subordinates of the specified resource.
+    Delete = DELETE.
+
+B.2 http://martinfowler.com/articles/richardsonMaturityModel.html
+
+The point of hypermedia controls is that they tell us what we can do next, and the
+URI of the resource we need to manipulate to do it. Rather than us having to know
+where to post our appointment request, the hypermedia controls in the response tell
+us how to do it. One obvious benefit of hypermedia controls is that it allows the
+server to change its URI scheme without breaking clients. As long as clients look up
+the "addTest" link URI then the server team can juggle all URIs other than the
+initial entry points.
