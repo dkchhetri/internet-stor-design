@@ -4,7 +4,7 @@
    http://roy.gbiv.com/untangled/2008/rest-apis-must-be-hypertext-driven
    http://www.iana.org/assignments/link-relations/link-relations.xml
 
-B.1 Blog
+A.1 Blog
 
 Create = PUT with a new URI
          POST to a base URI returning a newly created URI
