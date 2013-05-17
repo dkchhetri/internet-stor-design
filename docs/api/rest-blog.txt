@@ -2,6 +2,7 @@
    http://jcalcote.wordpress.com/2008/10/16/put-or-post-the-rest-of-the-story/
    http://martinfowler.com/articles/richardsonMaturityModel.html
    http://roy.gbiv.com/untangled/2008/rest-apis-must-be-hypertext-driven
+   http://www.iana.org/assignments/link-relations/link-relations.xml
 
 B.1 Blog
 
@@ -57,6 +58,13 @@ After that discussion, a more realistic mapping would seem to be:
     Update = POST if you are requesting the server to update one or more
              subordinates of the specified resource.
     Delete = DELETE.
+
+--------------------------------------------------------------------------------
+If your ensure that your endpoints refer to nouns then it is usually intuitive
+what the standard GET, PUT, POST, DELETE verbs will do to that noun. RPC allows
+endpoints to be verbs themselves and therefore they can conflict with the HTTP
+verbs and the intent becomes confusing. 
+--------------------------------------------------------------------------------
 
 B.2 http://martinfowler.com/articles/richardsonMaturityModel.html
 
