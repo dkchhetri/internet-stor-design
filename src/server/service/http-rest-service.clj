@@ -1,14 +1,5 @@
 (def rest-service-port 8080)
 
-(defn http-rest-handler [ring-request]
-  (with-channel ring-request channel
-    (if (websocket? channel)
-      (on-receive channel (fn [data]
-                            (send! channel data)))
-      (send! channel {:status 200
-                      :headers {"Content-Type" "text/plain"}
-                      :body    "Long polling?"}))))
-
 ;; POST /pumkin/v1/<stor name>/sync-txn
 (defn start-txn-handler [req]
   )
@@ -19,6 +10,12 @@
 
 ;; POST /pumkin/v1/<stor name>/commit-txn/<transaction-id>
 (defn commit-txn-handler [req]
+  )
+
+;; PUT /pumkin/v1/<stor name>/txn-add/<transaction-id>/<file-path>
+;; X-pumkin-md5set: 
+;; X-pumkin-attr: 
+(defn txn-add-handler [req]
   )
 
 ;; GET /pumkin/v1/<stor name>/txn-info/<transaction-id>/parent-file-index
