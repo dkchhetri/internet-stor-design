@@ -1,5 +1,7 @@
 ;; Copyright Dilip Chhetri (2013)
 
+;; Base directory used to store the contents
+(def stor-bkup-dir "/mnt/scratch/tmp/stor")
 
 ;; write data-structure 'ds' to filename, which can be later read-back
 ;; using deserialize
@@ -322,3 +324,84 @@
                   attr (s-deserialize (aget v 2))]
               (copy-one-file true from to)
               (set-posix-fattr to attr))))))))
+
+;; Setup directory to contain new-transaction
+;; returns transaction-id
+(defn open-new-transaction [stor]
+  (let [txn-id (str "txn-" (System/currentTimeMillis))
+        bkdir (str stor-bkup-dir "/" stor "/" txn-id)
+        cur-ts (now-seconds)
+        prev-db (prev-index-db (str bkdir "/.metadata") cur-ts)
+        idx-db (str bkdir "/.metadata/index/file_index." cur-ts)]
+    (mkdir (str bkdir "/data"))
+    (mkdir (str bkdir "/.metadata/index"))
+    (if prev-db (copy-one-file prev-db idx-db) (.createNewFile (java.io.File. idx-db)))
+    txn-id))
+        
+
+;; ============ HTTP service ==========================
+
+(def rest-service-port 8080)
+(def api-top "/pumkin/v1")
+
+(use 'compojure.core)
+(use 'ring.adapter.jetty)
+(require '[compojure.route :as route])
+
+;; POST /pumkin/v1/<stor name>/sync-txn
+(defn start-txn-handler [stor]
+  (let [txn-id (open-new-transaction stor)
+        location (str api-top "/" stor "/" txn-id)
+        col-link (str "<link rel=\"collection\" type=\"text/plain\" href=\"" location "\">")
+        toc-link (str "<link rel=\"index\" type=\"text/plain\" href=\"" location "/index\">")]
+    {:status 201
+     :headers {"Location:" location
+               "Content-Type:" "text/html"}
+     :body (str "<head>\n"
+                col-link "\n"
+                toc-link "\n"
+                "</head>")
+    }))
+
+;; DELETE /pumkin/v1/<stor name>/<transaction-id>
+(defn abort-txn-handler [req]
+  {:status 200
+   :headers {}
+   :body ""
+  })
+
+;; POST /pumkin/v1/<stor name>/<transaction-id>
+(defn commit-txn-handler [req]
+  {:status 202
+   :headers {}
+   :body ""
+  })
+
+;; PUT /pumkin/v1/<stor name>/<transaction-id>/<file-path>
+;; POST /pumkin/v1/<stor name>/<transaction-id>/<file-path>
+;; X-pumkin-md5set: 
+;; X-pumkin-attr: 
+(defn txn-add-handler [req]
+  {:status 202
+   :headers {}
+   :body ""
+  })
+
+;; GET /pumkin/v1/<stor name>/<transaction-id>/index
+(defn txn-info-pfile-idx-handler [req]
+  {:status 202
+   :headers {}
+   :body ""
+  })
+
+(defroutes rest-routes
+  (GET "/" [] "<p> Pumkin Home </p>")
+  (POST "/pumkin/v1/:stor/sync-txn" [stor] (start-txn-handler stor))
+  (DELETE "/pumkin/v1/:stor/:txn-id" [] abort-txn-handler)
+  (POST "/pumkin/v1/:stor/:txn-id" [] commit-txn-handler)
+  (GET "/pumkin/v1/:stor/:txn-id/index" [] txn-info-pfile-idx-handler)
+  (ANY "*" [] "<p>Page not found. </p>"))
+
+(defn start-http-server []
+  (run-jetty rest-routes {:port rest-service-port
+                          :join? true}))
