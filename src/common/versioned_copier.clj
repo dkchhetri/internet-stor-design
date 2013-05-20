@@ -328,7 +328,7 @@
 ;; Setup directory to contain new-transaction
 ;; returns transaction-id
 (defn open-new-transaction [stor]
-  (let [txn-id (str "txn-" (System/currentTimeMillis))
+  (let [txn-id (str "txn-" (now-seconds))
         bkdir (str stor-bkup-dir "/" stor "/" txn-id)
         cur-ts (now-seconds)
         prev-db (prev-index-db (str bkdir "/.metadata") cur-ts)
@@ -337,7 +337,6 @@
     (mkdir (str bkdir "/.metadata/index"))
     (if prev-db (copy-one-file prev-db idx-db) (.createNewFile (java.io.File. idx-db)))
     txn-id))
-        
 
 ;; ============ HTTP service ==========================
 
@@ -381,25 +380,26 @@
 ;; POST /pumkin/v1/<stor name>/<transaction-id>/<file-path>
 ;; X-pumkin-md5set: 
 ;; X-pumkin-attr: 
-(defn txn-add-handler [req]
+(defn txn-add-handler [txn file]
   {:status 202
    :headers {}
    :body ""
   })
 
 ;; GET /pumkin/v1/<stor name>/<transaction-id>/index
-(defn txn-info-pfile-idx-handler [req]
-  {:status 202
-   :headers {}
-   :body ""
-  })
+(defn txn-info-pfile-idx-handler [stor txn-id]
+  (let [ts (aget (.split #"-" txn-id) 1)
+        idx (str stor-bkup-dir "/" stor "/" txn-id "/.metadata/index/file_index." ts)]
+    (ring.util.response/file-response idx)
+  ))
 
 (defroutes rest-routes
   (GET "/" [] "<p> Pumkin Home </p>")
   (POST "/pumkin/v1/:stor/sync-txn" [stor] (start-txn-handler stor))
-  (DELETE "/pumkin/v1/:stor/:txn-id" [] abort-txn-handler)
-  (POST "/pumkin/v1/:stor/:txn-id" [] commit-txn-handler)
-  (GET "/pumkin/v1/:stor/:txn-id/index" [] txn-info-pfile-idx-handler)
+  (DELETE "/pumkin/v1/:stor/:txn-id" [stor txn-id] (abort-txn-handler stor txn-id))
+  (POST "/pumkin/v1/:stor/:txn-id" [stor txn-id] (commit-txn-handler stor txn-id))
+  (POST ["/pumkin/v1/:stor/:txn-id/data/:file" :file #".*"] [stor txn-id file] (txn-add-handler stor txn-id file))
+  (GET "/pumkin/v1/:stor/:txn-id/index" [stor txn-id] (txn-info-pfile-idx-handler stor txn-id))
   (ANY "*" [] "<p>Page not found. </p>"))
 
 (defn start-http-server []
