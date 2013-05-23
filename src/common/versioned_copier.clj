@@ -134,12 +134,18 @@
         (mkdir (str dir "/.metadata/index")))
       true)))
 
+;; strips the last components after "/"
+(defn dirname [^String path]
+  (let [comps (.split #"/" path)
+        cnt (count comps)]
+    (apply str (interpose "/" (take (dec cnt) comps)))))
+
 ;; get normalized path
 (defn normalized-path [path]
   (.getCanonicalPath (java.io.File. path)))
 
 (defn open-idx-writer [idx]
-  (clojure.java.io/writer idx))
+  (clojure.java.io/writer idx :append true))
 
 (defn close-idx [idx]
   (.close idx))
@@ -380,11 +386,20 @@
 ;; POST /pumkin/v1/<stor name>/<transaction-id>/<file-path>
 ;; X-pumkin-md5set: 
 ;; X-pumkin-attr: 
-(defn txn-add-handler [txn file]
-  {:status 202
-   :headers {}
-   :body ""
-  })
+(defn txn-add-handler [stor txn file req]
+  (let [ts (aget (.split #"-" txn) 1)
+        txn-dir (format "%s/%s/%s" stor-bkup-dir stor txn)
+        idx (format "%s/.metadata/index/file_index.%s" txn-dir ts)
+        dst (format "%s/data/%s/%s" txn-dir ts file)
+        src (req :body)]
+    (mkdir (dirname dst))
+    (clojure.java.io/copy src (clojure.java.io/file dst) :buffer-size 4096)
+    (with-open [idxwr (open-idx-writer idx)]
+      (idx-tbl-add idxwr file dst (get-posix-finfo dst) (md5set dst)))
+    {:status 202
+     :headers {}
+     :body ""
+    }))
 
 ;; GET /pumkin/v1/<stor name>/<transaction-id>/index
 (defn txn-info-pfile-idx-handler [stor txn-id]
@@ -398,7 +413,7 @@
   (POST "/pumkin/v1/:stor/sync-txn" [stor] (start-txn-handler stor))
   (DELETE "/pumkin/v1/:stor/:txn-id" [stor txn-id] (abort-txn-handler stor txn-id))
   (POST "/pumkin/v1/:stor/:txn-id" [stor txn-id] (commit-txn-handler stor txn-id))
-  (POST ["/pumkin/v1/:stor/:txn-id/data/:file" :file #".*"] [stor txn-id file] (txn-add-handler stor txn-id file))
+  (POST ["/pumkin/v1/:stor/:txn-id/data/:file" :file #".*"] [stor txn-id file :as req] (txn-add-handler stor txn-id file req))
   (GET "/pumkin/v1/:stor/:txn-id/index" [stor txn-id] (txn-info-pfile-idx-handler stor txn-id))
   (ANY "*" [] "<p>Page not found. </p>"))
 
