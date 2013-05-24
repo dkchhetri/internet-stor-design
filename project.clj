@@ -15,4 +15,5 @@
                                   [compojure "1.1.5"]
                                   [clout "1.1.0"]
                                   [ring-mock "0.1.4"]
+                                  [clj-http "0.7.2"]
                                   [http.async.client "0.5.2"]]}})

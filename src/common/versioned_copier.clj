@@ -91,6 +91,7 @@
 (defn walk-dir [dir]
   (remove #(.isDirectory %)
     (file-seq (java.io.File. dir))))
+
 ;; return seq of String:file-name
 (defn walk-dir2 [dir]
   (map 
@@ -420,3 +421,28 @@
 (defn start-http-server []
   (run-jetty rest-routes {:port rest-service-port
                           :join? true}))
+
+
+;; =========================== HTTP Client =================================
+
+(require 'clj-http.client)
+
+(def pumkin-srv (format "http://127.0.0.1:%d" rest-service-port))
+
+(defn push-one-file-to-server [stor txn file]
+  (let [url (format "%s/%s/%s/%s/data/%s" pumkin-srv api-top stor txn file)]
+    (clj-http.client/post url {:body (clojure.java.io/file file)})))
+
+;; return "txn" created by the server
+(defn txn-request [stor]
+  (let [url (format "%s/%s/%s/sync-txn" pumkin-srv api-top stor)
+        rsp (clj-http.client/post url)
+        loc (get (rsp :headers) "location")]
+   (last (.split #"/" loc))))
+
+;; recursively traverse and push each file to server
+(defn push-dir-to-server [stor dir]
+  (let [txn (txn-request stor)]
+      (println (str "Created: " txn))
+      (map #(push-one-file-to-server stor txn %) (walk-dir2 dir))))
+
