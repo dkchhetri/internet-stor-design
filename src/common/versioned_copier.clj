@@ -533,7 +533,7 @@
         (and (= (:mtime idx-attr) (:mtime loc-fattr))
              (= (:ctime idx-attr) (:ctime loc-fattr))
              (= (:size idx-attr) (:size loc-fattr)))))
-    (do (println (str "NoEntry: " file)) true)))
+    true))
         
 ;; recursively traverse and push each file to server
 (defn push-dir-to-server [stor dir]
@@ -544,7 +544,6 @@
         idx-tbl (parse-idx-tbl-from-string idx-stream)
         changed-files (filter #(changed-file-quick-filter idx-tbl %) (walk-dir2 dir))]
     (println (str "Created: " txn))
-    (doseq [f changed-files] (println (str "Modified: " f)))
     (dorun
       (map #(push-one-file-to-server stor txn %) changed-files))
     (clj-http.client/post txn-url)))
