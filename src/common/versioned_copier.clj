@@ -21,6 +21,9 @@
   (let [r (java.io.PushbackReader. (java.io.StringReader. s))]
     (read r)))
 
+(defn str-line-seq [^String str]
+  (seq (.split #"\n" str)))
+
 ;; size of chunk with which file will be chopped and checksummed
 (def csum-chunk-size 32768)
 ;;(def csum-chunk-size 1024)
@@ -168,16 +171,25 @@
 ;;        dst: destination path on backup
 ;;        attr: {... posix attribute}
 ;;        md5set: {:off <offset> :count <blk size> :md5 <block md5> :rhash <rolling hash>})
+(defn parse-idx-tbl-from-lineseq [lseq]
+  (loop [l lseq
+         h (hash-map)]
+    (if-let [s (first l)]
+      (let [v (.split #"\|" s)]
+        (if (= 4 (count v))
+          (let [dst (aget v 1)
+                meta (s-deserialize (aget v 2))
+                md5set (s-deserialize (aget v 3))]
+            (recur (rest l) (assoc h (aget v 0) {:dst dst :meta meta :md5set md5set})))
+          (recur (rest l) h)))
+      h)))
+
+(defn parse-idx-tbl-from-string [^String str]
+  (parse-idx-tbl-from-lineseq (str-line-seq str)))
+
 (defn parse-idx-tbl [file]
   (with-open [r (clojure.java.io/reader file)]
-    (loop [l (line-seq r)
-           h (hash-map)]
-      (let [s (first l)]
-        (if-not s
-          h
-          (let [v (.split #"\|" s)
-                x (s-deserialize (aget v 3))]
-            (recur (rest l) (assoc h (aget v 0) x))))))))
+    (parse-idx-tbl-from-lineseq (line-seq r))))
 
 ;; =================== File Delta Generation ============================
 ;; convert list of md5 to hash-map
@@ -301,7 +313,7 @@
               locmd5set (md5set ff)
               locmd5 (:md5 (first locmd5set))
               dst (str data_dir "/" ff)]
-          ;; XXX: when file are same the "dst" hs to be copied over from the previous idx table
+          ;; XXX: when file are same the "dst" has to be copied over from the previous idx table
           (idx-tbl-add new-idx ff dst (get-posix-finfo ff) locmd5set)
           (if (not= locmd5 bkmd5)
             (do
@@ -359,13 +371,15 @@
   (let [txn-id (open-new-transaction stor)
         location (str api-top "/" stor "/" txn-id)
         col-link (str "<link rel=\"collection\" type=\"text/plain\" href=\"" location "\">")
-        toc-link (str "<link rel=\"index\" type=\"text/plain\" href=\"" location "/index\">")]
+        toc-link (str "<link rel=\"index\" type=\"text/plain\" href=\"" location "/index\">")
+        data-link (str "<link rel=\"item\" type=\"text/plain\" href=\"" location "/data\">")]
     {:status 201
      :headers {"Location:" location
                "Content-Type:" "text/html"}
      :body (str "<head>\n"
                 col-link "\n"
                 toc-link "\n"
+                data-link "\n"
                 "</head>")
     }))
 
@@ -392,15 +406,26 @@
         txn-dir (format "%s/%s/%s" stor-bkup-dir stor txn)
         idx (format "%s/.metadata/index/file_index.%s" txn-dir ts)
         dst (format "%s/data/%s/%s" txn-dir ts file)
+        x-md5set (get (req :headers) "x-meta-md5set")
+        x-fattr (get (req :headers) "x-meta-fattr")
         src (req :body)]
-    (mkdir (dirname dst))
-    (clojure.java.io/copy src (clojure.java.io/file dst) :buffer-size 4096)
-    (with-open [idxwr (open-idx-writer idx)]
-      (idx-tbl-add idxwr file dst (get-posix-finfo dst) (md5set dst)))
-    {:status 202
-     :headers {}
-     :body ""
-    }))
+    (if (and x-md5set x-fattr)
+      (do
+        (mkdir (dirname dst))
+        (clojure.java.io/copy src (clojure.java.io/file dst) :buffer-size 4096)
+        (with-open [idxwr (open-idx-writer idx)]
+          (idx-tbl-add idxwr file dst x-fattr x-md5set))
+        {:status 202
+         :headers {}
+         :body ""
+        })
+
+      ;; Bad Request
+      {:status 400
+       :headers {"x-meta-md5set" "needed" "x-meta-fattr" "needed"}
+       :body ""
+      })))
+      
 
 ;; GET /pumkin/v1/<stor name>/<transaction-id>/index
 (defn txn-info-pfile-idx-handler [stor txn-id]
@@ -430,8 +455,11 @@
 (def pumkin-srv (format "http://127.0.0.1:%d" rest-service-port))
 
 (defn push-one-file-to-server [stor txn file]
-  (let [url (format "%s/%s/%s/%s/data/%s" pumkin-srv api-top stor txn file)]
-    (clj-http.client/post url {:body (clojure.java.io/file file)})))
+  (let [url (format "%s/%s/%s/%s/data/%s" pumkin-srv api-top stor txn file)
+        md5set (md5set file)
+        fattr (get-posix-finfo file)
+        headers {"x-meta-md5set" (str md5set) "x-meta-fattr" (str fattr)}]
+    (clj-http.client/post url {:body (clojure.java.io/file file) :headers headers})))
 
 ;; return "txn" created by the server
 (defn txn-request [stor]
@@ -440,9 +468,36 @@
         loc (get (rsp :headers) "location")]
    (last (.split #"/" loc))))
 
+;; Fast check to see if the file has changed by comparing following attr with index
+;;   mtime, ctime, length
+(defn changed-file-quick-filter2 [idx-tbl file]
+  (if-let [idx-entry (get idx-tbl file)]
+    (let [loc-fattr (get-posix-finfo file)
+          idx-attr (:meta idx-entry)]
+      (not
+        (and (= (:mtime idx-attr) (:mtime loc-fattr))
+             (= (:ctime idx-attr) (:ctime loc-fattr))
+             (= (:size idx-attr) (:size loc-fattr)))))
+    true))
+
+(defn changed-file-quick-filter [idx-tbl file]
+  (if-let [idx-entry (get idx-tbl file)]
+    (let [loc-fattr (get-posix-finfo file)
+          idx-attr (:meta idx-entry)]
+      (not
+        (and (= (:mtime idx-attr) (:mtime loc-fattr))
+             (= (:ctime idx-attr) (:ctime loc-fattr))
+             (= (:size idx-attr) (:size loc-fattr)))))
+    (do (println (str "NoEntry: " file)) true)))
+        
 ;; recursively traverse and push each file to server
 (defn push-dir-to-server [stor dir]
-  (let [txn (txn-request stor)]
-      (println (str "Created: " txn))
-      (map #(push-one-file-to-server stor txn %) (walk-dir2 dir))))
-
+  (let [txn (txn-request stor)
+        idx-url (format "%s/%s/%s/%s/index" pumkin-srv api-top stor txn)
+        idx-stream ((clj-http.client/get idx-url) :body)
+        idx-tbl (parse-idx-tbl-from-string idx-stream)
+        changed-files (filter #(changed-file-quick-filter idx-tbl %) (walk-dir2 dir))]
+    (println (str "Created: " txn))
+    (doseq [f changed-files] (println (str "Modified: " f)))
+    (dorun
+      (map #(push-one-file-to-server stor txn %) changed-files))))
