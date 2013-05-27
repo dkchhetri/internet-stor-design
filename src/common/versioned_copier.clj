@@ -124,6 +124,20 @@
       (str idxdir "/index/file_index." prev-ts)
       nil)))
 
+;; greatest index-db with time-stamp >= "ts"
+(defn prev-index-db2 [stor ts]
+  (let [prev-ts
+    (first
+      (sort #(> %1 %2)
+        (filter #(<= % ts)
+          (map
+            #(Integer/parseInt %)
+              (filter  #(re-matches #"[0-9]+" %)
+                (.list (java.io.File. (format "%s/%s" stor-bkup-dir stor))))))))]
+    (if prev-ts
+      (format "%s/%s/%d/.metadata/index/file_index.%d" stor-bkup-dir stor prev-ts prev-ts)
+      nil)))
+
 (defn mkdir [dir]
   (let [d (java.io.File. dir)]
     (cond
@@ -156,6 +170,16 @@
 
 (defn idx-tbl-add [idx file dst info md5]
   (.write idx (str file "|" dst "|" info "|" md5 "\n")))
+
+;; serialize/append idx-tbl to idx-file
+(defn serialize-idx-tbl [idx-file idx-tbl]
+  (with-open [idx-wr (open-idx-writer idx-file)]
+    (doseq [k (keys idx-tbl)]
+      (let [v (get idx-tbl k)
+            dst (v :dst)
+            meta (v :meta)
+            md5set (v :md5set)]
+        (idx-tbl-add idx-wr k dst meta md5set)))))
 
 ;; copy one file, making directory if needed
 (defn copy-one-file [verbose src dst]
@@ -350,12 +374,23 @@
   (let [txn-id (str "txn-" (now-seconds))
         bkdir (str stor-bkup-dir "/" stor "/" txn-id)
         cur-ts (now-seconds)
-        prev-db (prev-index-db (str bkdir "/.metadata") cur-ts)
-        idx-db (str bkdir "/.metadata/index/file_index." cur-ts)]
+        prev-db (prev-index-db2 stor cur-ts)
+        idx-db (str bkdir "/.metadata/index/file_index.parent")]
     (mkdir (str bkdir "/data"))
     (mkdir (str bkdir "/.metadata/index"))
-    (if prev-db (copy-one-file prev-db idx-db) (.createNewFile (java.io.File. idx-db)))
+    (.createNewFile (java.io.File. (str bkdir "/.metadata/index/file_index.delta")))
+    (if prev-db (copy-one-file false prev-db idx-db) (.createNewFile (java.io.File. idx-db)))
     txn-id))
+
+
+;; merge 'idx-delta' and 'idx-parent' into 'idx'
+(defn merge-index-files [idx-parent idx-delta idx]
+  (let [idx-p-tbl (parse-idx-tbl idx-parent)
+        idx-d-tbl (parse-idx-tbl idx-delta)
+        t1 (apply dissoc idx-p-tbl (keys idx-d-tbl))]
+    (serialize-idx-tbl idx t1)
+    (serialize-idx-tbl idx idx-d-tbl)
+    ))
 
 ;; ============ HTTP service ==========================
 
@@ -384,18 +419,28 @@
     }))
 
 ;; DELETE /pumkin/v1/<stor name>/<transaction-id>
-(defn abort-txn-handler [req]
+(defn abort-txn-handler [stor txn]
   {:status 200
    :headers {}
    :body ""
   })
 
 ;; POST /pumkin/v1/<stor name>/<transaction-id>
-(defn commit-txn-handler [req]
-  {:status 202
-   :headers {}
-   :body ""
-  })
+(defn commit-txn-handler [stor txn]
+  (let [txn-dir (str stor-bkup-dir "/" stor "/" txn)
+        ts (aget (.split #"-" txn) 1)
+        dir (str stor-bkup-dir "/" stor "/" ts)
+        idx (format "%s/.metadata/index/file_index.%s" txn-dir ts)
+        idx-parent (format "%s/.metadata/index/file_index.parent" txn-dir)
+        idx-delta (format "%s/.metadata/index/file_index.delta" txn-dir)]
+    (merge-index-files idx-parent idx-delta idx)
+    (.delete (java.io.File. idx-parent))
+    (.delete (java.io.File. idx-delta))
+    (.renameTo (java.io.File. txn-dir) (java.io.File. dir))
+    {:status 202
+     :headers {}
+     :body ""
+    }))
 
 ;; PUT /pumkin/v1/<stor name>/<transaction-id>/<file-path>
 ;; POST /pumkin/v1/<stor name>/<transaction-id>/<file-path>
@@ -404,8 +449,9 @@
 (defn txn-add-handler [stor txn file req]
   (let [ts (aget (.split #"-" txn) 1)
         txn-dir (format "%s/%s/%s" stor-bkup-dir stor txn)
-        idx (format "%s/.metadata/index/file_index.%s" txn-dir ts)
-        dst (format "%s/data/%s/%s" txn-dir ts file)
+        idx (format "%s/.metadata/index/file_index.delta" txn-dir)
+        dst (format "%s/data/%s" txn-dir file)
+        commit-dst (format "%s/%s/%s/data/%s" stor-bkup-dir stor ts file)
         x-md5set (get (req :headers) "x-meta-md5set")
         x-fattr (get (req :headers) "x-meta-fattr")
         src (req :body)]
@@ -414,7 +460,7 @@
         (mkdir (dirname dst))
         (clojure.java.io/copy src (clojure.java.io/file dst) :buffer-size 4096)
         (with-open [idxwr (open-idx-writer idx)]
-          (idx-tbl-add idxwr file dst x-fattr x-md5set))
+          (idx-tbl-add idxwr file commit-dst x-fattr x-md5set))
         {:status 202
          :headers {}
          :body ""
@@ -429,8 +475,7 @@
 
 ;; GET /pumkin/v1/<stor name>/<transaction-id>/index
 (defn txn-info-pfile-idx-handler [stor txn-id]
-  (let [ts (aget (.split #"-" txn-id) 1)
-        idx (str stor-bkup-dir "/" stor "/" txn-id "/.metadata/index/file_index." ts)]
+  (let [idx (str stor-bkup-dir "/" stor "/" txn-id "/.metadata/index/file_index.parent")]
     (ring.util.response/file-response idx)
   ))
 
@@ -493,11 +538,13 @@
 ;; recursively traverse and push each file to server
 (defn push-dir-to-server [stor dir]
   (let [txn (txn-request stor)
-        idx-url (format "%s/%s/%s/%s/index" pumkin-srv api-top stor txn)
+        txn-url (format "%s/%s/%s/%s" pumkin-srv api-top stor txn)
+        idx-url (format "%s/index" txn-url)
         idx-stream ((clj-http.client/get idx-url) :body)
         idx-tbl (parse-idx-tbl-from-string idx-stream)
         changed-files (filter #(changed-file-quick-filter idx-tbl %) (walk-dir2 dir))]
     (println (str "Created: " txn))
     (doseq [f changed-files] (println (str "Modified: " f)))
     (dorun
-      (map #(push-one-file-to-server stor txn %) changed-files))))
+      (map #(push-one-file-to-server stor txn %) changed-files))
+    (clj-http.client/post txn-url)))
