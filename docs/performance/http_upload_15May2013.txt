@@ -1,0 +1,34 @@
+1. Copy Linux kernel -- (all test done with warm FS cache)
+   dchhetri@desktop1:~$ du -ks /mnt/scratch/tmp/linux-2.6.37
+   483768	/mnt/scratch/tmp/linux-2.6.37
+   dchhetri@desktop1:~$ find /mnt/scratch/tmp/linux-2.6.37 -type f|wc -l
+   35187
+
+   dchhetri@desktop1:/mnt/scratch/tmp/stor$ time rsync -a ../linux-2.6.37 127.0.0.1:/mnt/scratch/tmp/stor/linux
+   real	0m4.753s
+   user	0m4.936s
+   sys	0m0.704s
+
+   dchhetri@desktop1: touch ../linux-2.6.37/{drivers/parisc/lasi.c,drivers/net/niu.c,Documentation/serial/rocket.txt}
+   dchhetri@desktop1:/mnt/scratch/tmp/stor$ time rsync -a ../linux-2.6.37 127.0.0.1:/mnt/scratch/tmp/stor/linux
+   real	0m0.364s
+   user	0m0.056s
+   sys	0m0.080s
+
+   'pmap' version -- files to be copied cached, and server is at 127.0.0.1
+        (pmap #(push-one-file-to-server stor txn %) (walk-dir2 dir)))))
+    => mpstat shows all 8 cpus (4+4 HT) busy around 50%
+    user=> (time (push-dir-to-server "dilip" "/mnt/scratch/tmp/linux-2.6.37"))
+    Created: txn-1369535940
+    "Elapsed time: 50537.176349 msecs"
+
+    summary: 9.7 MB/sec [ ~4.6X improvement over single threaded ]
+
+    user=> (time (push-dir-to-server "dilip" "/mnt/scratch/tmp/linux-2.6.37"))
+    Created: txn-1369686892
+    "Elapsed time: 228270.916472 msecs"
+
+    ; after modifying drivers/parisc/lasi.c,drivers/net/niu.c,Documentation/serial/rocket.txt
+    user=> (time (push-dir-to-server "dilip" "/mnt/scratch/tmp/linux-2.6.37"))
+    Created: txn-1369687441
+    "Elapsed time: 9781.845241 msecs"
