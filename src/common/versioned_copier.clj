@@ -554,4 +554,4 @@
     (let [futures (doall (map #(push-one-file-to-server stor txn %) changed-files))]
       ;; wait for all requests to complete by deref'ing the future
       (doseq [f futures] (deref f))
-    (clj-http.client/post txn-url)))
+    (clj-http.client/post txn-url))))
