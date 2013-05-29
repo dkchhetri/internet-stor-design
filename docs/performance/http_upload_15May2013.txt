@@ -32,3 +32,14 @@
     user=> (time (push-dir-to-server "dilip" "/mnt/scratch/tmp/linux-2.6.37"))
     Created: txn-1369687441
     "Elapsed time: 9781.845241 msecs"
+
+    ;; With persistent HTTP client connection
+    ;;  (with-connection-pool {:timeout 5 :threads 4 :insecure? false :default-per-route 10} ... get/post)
+    user=> (time (push-dir-to-server "dilip" "/mnt/scratch/tmp/linux-2.6.37"))
+    Created: txn-1369697258
+    "Elapsed time: 127809.41212 msecs"
+
+    === with Async http-kit.client
+    user=> (time (push-dir-to-server "dilip" "/mnt/scratch/tmp/linux-2.6.37"))
+    Created: txn-1369809993
+    "Elapsed time: 26072.893565 msecs"

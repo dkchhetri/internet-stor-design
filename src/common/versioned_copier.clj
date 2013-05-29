@@ -396,6 +396,8 @@
 
 (def rest-service-port 8080)
 (def api-top "/pumkin/v1")
+;; http-kit.client adds extra "/", and that screws up pattern matching on server side
+(def api-top2 "pumkin/v1")
 
 (use 'compojure.core)
 (use 'ring.adapter.jetty)
@@ -496,15 +498,20 @@
 ;; =========================== HTTP Client =================================
 
 (require 'clj-http.client)
+(require 'org.httpkit.client)
 
 (def pumkin-srv (format "http://127.0.0.1:%d" rest-service-port))
 
 (defn push-one-file-to-server [stor txn file]
-  (let [url (format "%s/%s/%s/%s/data/%s" pumkin-srv api-top stor txn file)
+  (let [url (format "%s/%s/%s/%s/data/%s" pumkin-srv api-top2 stor txn file)
         md5set (md5set file)
         fattr (get-posix-finfo file)
-        headers {"x-meta-md5set" (str md5set) "x-meta-fattr" (str fattr)}]
-    (clj-http.client/post url {:body (clojure.java.io/file file) :headers headers})))
+        headers {"x-meta-md5set" (str md5set)
+                 "x-meta-fattr" (str fattr)}]
+    (org.httpkit.client/post url
+      {:body (clojure.java.io/file file)
+       :headers headers}
+      (fn [resp] resp))))
 
 ;; return "txn" created by the server
 (defn txn-request [stor]
@@ -544,6 +551,7 @@
         idx-tbl (parse-idx-tbl-from-string idx-stream)
         changed-files (filter #(changed-file-quick-filter idx-tbl %) (walk-dir2 dir))]
     (println (str "Created: " txn))
-    (dorun
-      (map #(push-one-file-to-server stor txn %) changed-files))
+    (let [futures (doall (map #(push-one-file-to-server stor txn %) changed-files))]
+      ;; wait for all requests to complete by deref'ing the future
+      (doseq [f futures] (deref f))
     (clj-http.client/post txn-url)))
